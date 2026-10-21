@@ -18,3 +18,6 @@ langchain-mcp-adapters==0.3.0
 nest_asyncio==1.6.0
 mcp==1.28.1
 certifi==2026.6.17
+langchain-mcp-adapters==0.3.0
+nest_asyncio==1.6.0
+mcp==1.28.1
