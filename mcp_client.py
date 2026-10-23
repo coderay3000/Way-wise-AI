@@ -2,6 +2,8 @@ import os
 import sys
 import asyncio
 import certifi
+
+from pathlib import Path
 from dotenv import load_dotenv
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_groq import ChatGroq
@@ -41,12 +43,14 @@ client = MultiServerMCPClient(
         },
     
 
-       "weather": {
-               "transport": "stdio",
-               "command": sys.executable,
-               "args": ["D:\\AGENTIC-AI-Projects\\Way-wise-AI\\custom_weather_mcp_server.py"],
-               "env": {"OPENWEATHER_API_KEY": str(OPENWEATHER_API_KEY)},
-              },
+       "weather": { 
+          "transport": "stdio", 
+          "command": sys.executable, 
+          "args": [ 
+             str(Path(__file__).resolve().parent / "custom_weather_mcp_server.py") 
+             ], 
+          "env": { **os.environ, "OPENWEATHER_API_KEY": str(OPENWEATHER_API_KEY), },
+         },
      }
 )
 
