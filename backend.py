@@ -105,19 +105,24 @@ FLIGHT_AGENT_PROMPT = """
 
 """
 
+
 def hotel_agent(state: TravelState) -> TravelState:
     query = f"Best hotels for {state['user_query']}"
-    # hotel_results = tavily_search(query)
+
     hotel_results = asyncio.run(tavily_mcp_search(query))
 
+    # Limit the search result size before passing it downstream
+    hotel_results = str(hotel_results)[:2500]
+
     return {
-         "hotel_results": hotel_results,
-         "message": [
-            AIMessage(content=f"Hotel search results: {hotel_results}")
-         ],
-         "llm_calls": state.get("llm_calls", 0) + 1
-           
+        "hotel_results": hotel_results,
+        "message": [
+            AIMessage(content="Hotel search completed.")
+        ],
+        "llm_calls": state.get("llm_calls", 0) + 1
     }
+
+
 
 # Flight Agent 
 def flight_agent(state:TravelState):
@@ -145,7 +150,7 @@ def flight_agent(state:TravelState):
       prompt = FLIGHT_AGENT_PROMPT.format(
          query=query,
          airport_data=str(airports)[:3000],
-         airline_data=str(airports)[:3000]
+         airline_data=str(airports)[:1500]
       )
 
       response = llm.invoke([
