@@ -60,7 +60,7 @@ class TravelState(TypedDict):
     flight_results: str
     hotel_results: str
     itinerary: str
-    llm_calls: int
+    llm_calls: Annotated[int, operator.add]
     weather_results:str
 
 
@@ -119,7 +119,7 @@ def hotel_agent(state: TravelState) -> TravelState:
         "message": [
             AIMessage(content="Hotel search completed.")
         ],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 
@@ -172,7 +172,7 @@ def flight_agent(state:TravelState):
         "message": [
             AIMessage(content=f"Flight search results: {flight_data}")
         ],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
  # weather agent
@@ -225,7 +225,7 @@ def itinerary_agent(state: TravelState) -> TravelState:
    return {
       "itinerary": response.content,
       "message":[response],
-      "llm_calls": state.get("llm_calls", 0) + 1
+      "llm_calls": 1
    }
 
 def final_agent(state: TravelState):
@@ -272,22 +272,38 @@ Important:
     return {
        "itinerary": response.content,
         "message": [response],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
+
+
+
+def aggregate_results(state: TravelState) -> TravelState:
+    return {}
 
 
 graph = StateGraph(TravelState)
 
+
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
-graph.add_node("weather_agent",weather_agent)
+graph.add_node("weather_agent", weather_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
-graph.add_node("final_agent",final_agent)
+graph.add_node("final_agent", final_agent)
+
+# New aggregator node
+graph.add_node("aggregate_results", aggregate_results)
+
 
 graph.add_edge(START, "flight_agent")
-graph.add_edge("flight_agent", "hotel_agent")
-graph.add_edge("hotel_agent", "weather_agent")
-graph.add_edge("weather_agent","itinerary_agent")
+graph.add_edge(START, "hotel_agent")
+graph.add_edge(START, "weather_agent")
+
+
+graph.add_edge("flight_agent", "aggregate_results")
+graph.add_edge("hotel_agent", "aggregate_results")
+graph.add_edge("weather_agent", "aggregate_results")
+
+graph.add_edge("aggregate_results", "itinerary_agent")
 graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END)
 
