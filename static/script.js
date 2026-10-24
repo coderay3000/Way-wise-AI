@@ -46,7 +46,7 @@ function showTab(name) {
 function renderCards(list, items) {
   list.innerHTML = "";
   if (!items.length) {
-    list.innerHTML = '<div class="empty">Abhi koi trip nahi hai. Upar search bar mein apna trip likho.</div>';
+    list.innerHTML = '<div class="empty">There are no trips. Plzz search your trip on the search bar</div>';
     return;
   }
   items.forEach((t) => {
