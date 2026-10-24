@@ -1,299 +1,230 @@
-let currentThreadId = localStorage.getItem("travel_thread_id") || null;
-let latestAnswerMarkdown = "";
-let waitingForApproval = false;
+const $ = (id) => document.getElementById(id);
+const EMOJI = ["🏝️", "🗼", "🏔️", "🌆", "🏖️", "🕌"];
+const COLORS = ["#e3f2fd", "#fff3e0", "#e8f5e9", "#f3e5f5", "#fce4ec", "#e0f7fa"];
 
-const AGENT_LABELS = {
-  flight_agent: "✈️ Flight Agent",
-  hotel_agent: "🏨 Hotel Agent",
-  weather_agent: "🌦️ Weather Agent",
-  budget_agent: "💰 Budget Agent",
-  itinerary_agent: "🗓️ Itinerary Agent"
-};
+let trips = JSON.parse(localStorage.getItem("ww_trips") || "[]");
+let cur = null;
 
-function setPrompt(text) {
-  document.getElementById("userInput").value = text;
+
+/* ---------- helpers ---------- */
+
+function save() {
+  localStorage.setItem("ww_trips", JSON.stringify(trips));
+  $("cnt").textContent = trips.length;
 }
 
-function setLoading(isLoading, mode = "draft") {
-  const sendBtn = document.getElementById("sendBtn");
-  const btnText = document.getElementById("btnText");
-  const btnLoader = document.getElementById("btnLoader");
-  const approveBtn = document.getElementById("approveBtn");
-  const reviseBtn = document.getElementById("reviseBtn");
+function md(el, text) {
+  if (typeof marked !== "undefined") el.innerHTML = marked.parse(text || "");
+  else el.textContent = text || "";
+}
 
-  sendBtn.disabled = isLoading;
-  approveBtn.disabled = isLoading;
-  reviseBtn.disabled = isLoading;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.add("hidden"), 4000);
+}
 
-  if (isLoading && mode === "draft") {
-    btnText.classList.add("hidden");
-    btnLoader.classList.remove("hidden");
-  } else {
-    btnText.classList.remove("hidden");
-    btnLoader.classList.add("hidden");
+function show(view) {
+  document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
+  $("v-" + view).classList.remove("hidden");
+  if (view === "home") renderCards($("homeList"), trips.slice(0, 4));
+  if (view === "trips") renderCards($("tripList"), trips);
+  window.scrollTo(0, 0);
+}
+
+function showTab(name) {
+  document.querySelectorAll(".panel").forEach((p) => p.classList.add("hidden"));
+  $("t-" + name).classList.remove("hidden");
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
+}
+
+
+/* ---------- trip cards ---------- */
+
+function renderCards(list, items) {
+  list.innerHTML = "";
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">Abhi koi trip nahi hai. Upar search bar mein apna trip likho.</div>';
+    return;
   }
-}
-
-function showError(message) {
-  const errorBox = document.getElementById("errorBox");
-  errorBox.textContent = message;
-  errorBox.classList.remove("hidden");
-  errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
-}
-
-function hideError() {
-  const errorBox = document.getElementById("errorBox");
-  errorBox.classList.add("hidden");
-  errorBox.textContent = "";
-}
-
-function renderMarkdown(element, markdown) {
-  if (typeof marked !== "undefined") {
-    element.innerHTML = marked.parse(markdown || "");
-  } else {
-    element.innerText = markdown || "";
-  }
-}
-
-function showWorkflow(data) {
-  const section = document.getElementById("workflowSection");
-  const reasoning = document.getElementById("supervisorReasoning");
-  const chips = document.getElementById("agentChips");
-  const guardrailBadge = document.getElementById("guardrailBadge");
-
-  reasoning.textContent = data.supervisor_reasoning || "Supervisor routing completed.";
-  chips.innerHTML = "";
-
-  (data.selected_agents || []).forEach((agent) => {
-    const chip = document.createElement("span");
-    chip.className = "agent-chip";
-    chip.textContent = AGENT_LABELS[agent] || agent;
-    chips.appendChild(chip);
-  });
-
-  if (data.guardrail_allowed === false) {
-    guardrailBadge.textContent = "Guardrail blocked";
-    guardrailBadge.classList.add("blocked");
-  } else {
-    guardrailBadge.textContent = "Guardrail passed";
-    guardrailBadge.classList.remove("blocked");
-  }
-
-  section.classList.remove("hidden");
-}
-
-function showResult(answer, threadId, isDraft = false) {
-  latestAnswerMarkdown = answer || "";
-
-  const resultSection = document.getElementById("resultSection");
-  const resultBox = document.getElementById("resultBox");
-  const threadInfo = document.getElementById("threadInfo");
-  const resultTitle = document.getElementById("resultTitle");
-
-  renderMarkdown(resultBox, latestAnswerMarkdown);
-  threadInfo.textContent = `Thread ID: ${threadId}`;
-  resultTitle.textContent = isDraft ? "Draft Travel Plan" : "Your Final AI Travel Plan";
-  resultSection.classList.remove("hidden");
-
-  resultSection.scrollIntoView({
-    behavior: "smooth",
-    block: "start"
+  items.forEach((t) => {
+    const n = [...t.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+    const card = document.createElement("div");
+    card.className = "trip";
+    card.innerHTML =
+      '<div class="trip-top" style="background:' + COLORS[n % 6] + '">' + EMOJI[n % 6] + "</div>" +
+      '<div class="trip-body"><h3></h3><p></p><span class="tag">AI Plan ✓</span></div>';
+    card.querySelector("h3").textContent = t.title;
+    card.querySelector("p").textContent = new Date(t.created).toLocaleDateString() + " · " + t.chat.length + " chat msgs";
+    card.onclick = () => openTrip(t.id);
+    list.appendChild(card);
   });
 }
 
-function showApproval(data) {
-  waitingForApproval = true;
-  const section = document.getElementById("approvalSection");
-  const approvalRequest = document.getElementById("approvalRequest");
-  approvalRequest.textContent = data.approval_request ||
-    "Approve the draft or provide feedback before the final plan is generated.";
-  section.classList.remove("hidden");
+function openTrip(id) {
+  cur = trips.find((t) => t.id === id);
+  if (!cur) return show("home");
+  $("dTitle").textContent = cur.title;
+  $("crTitle").textContent = cur.title.slice(0, 40);
+  $("dMeta").textContent = "Thread ID: " + cur.id;
+  md($("resultBox"), cur.answer);
+  $("rawFlights").textContent = cur.flights || "No data";
+  $("rawHotels").textContent = cur.hotels || "No data";
+  $("rawWeather").textContent = cur.weather || "No data";
+  renderChat();
+  showTab("plan");
+  show("detail");
 }
 
-function hideApproval() {
-  waitingForApproval = false;
-  document.getElementById("approvalSection").classList.add("hidden");
-  document.getElementById("approvalFeedback").value = "";
-}
 
-async function sendMessage() {
-  hideError();
+/* ---------- plan a trip ---------- */
 
-  if (waitingForApproval) {
-    showError("Please approve or revise the current draft before starting another plan.");
-    return;
-  }
+async function planTrip() {
+  const message = $("searchInput").value.trim();
+  if (!message) return toast("Pehle apna travel request likho.");
 
-  const input = document.getElementById("userInput");
-  const message = input.value.trim();
-
-  if (!message) {
-    showError("Please enter your travel request first.");
-    return;
-  }
-
-  setLoading(true, "draft");
+  const steps = ["Searching flights...", "Finding hotels...", "Checking weather...", "Writing your plan..."];
+  let i = 0;
+  $("loadMsg").textContent = steps[0];
+  $("overlay").classList.remove("hidden");
+  const timer = setInterval(() => ($("loadMsg").textContent = steps[Math.min(++i, steps.length - 1)]), 9000);
 
   try {
-    const response = await fetch("/api/travel", {
+    const res = await fetch("/api/travel", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        message: message,
-        thread_id: currentThreadId
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
     });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || "Kuch galat ho gaya.");
 
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || "Something went wrong.");
-    }
-
-    currentThreadId = data.thread_id;
-    localStorage.setItem("travel_thread_id", currentThreadId);
-
-    showWorkflow(data);
-
-    if (data.requires_approval) {
-      showResult(data.itinerary || data.answer, data.thread_id, true);
-      showApproval(data);
-    } else {
-      hideApproval();
-      showResult(data.answer, data.thread_id, false);
-    }
-  } catch (error) {
-    showError(error.message);
+    const trip = {
+      id: data.thread_id,
+      title: message.length > 80 ? message.slice(0, 80) + "..." : message,
+      created: Date.now(),
+      answer: data.answer || data.itinerary,
+      flights: data.flight_results,
+      hotels: data.hotel_results,
+      weather: data.weather_results,
+      chat: [],
+    };
+    trips.unshift(trip);
+    save();
+    $("searchInput").value = "";
+    openTrip(trip.id);
+  } catch (e) {
+    toast(e.message);
   } finally {
-    setLoading(false, "draft");
+    clearInterval(timer);
+    $("overlay").classList.add("hidden");
   }
 }
 
-async function submitApproval(approved) {
-  hideError();
 
-  if (!currentThreadId || !waitingForApproval) {
-    showError("There is no draft waiting for approval.");
-    return;
-  }
+/* ---------- chat ---------- */
 
-  const feedbackInput = document.getElementById("approvalFeedback");
-  const feedback = feedbackInput.value.trim();
+function renderChat() {
+  const box = $("chatBox");
+  box.innerHTML = "";
+  const hello = document.createElement("div");
+  hello.className = "msg bot";
+  hello.textContent = "Hi! Is trip ke baare mein kuch bhi pucho: itinerary, budget, hotels ya packing.";
+  box.appendChild(hello);
 
-  if (!approved && !feedback) {
-    showError("Please enter revision feedback before requesting changes.");
-    feedbackInput.focus();
-    return;
-  }
+  cur.chat.forEach((m) => {
+    const d = document.createElement("div");
+    d.className = "msg " + (m.role === "user" ? "user" : "bot");
+    if (m.role === "user") d.textContent = m.content;
+    else md(d, m.content);
+    box.appendChild(d);
+  });
+  box.scrollTop = box.scrollHeight;
+}
 
-  setLoading(true, "approval");
+async function sendChat(text) {
+  const question = (text || $("chatInput").value).trim();
+  if (!question || !cur) return;
+
+  const history = cur.chat.slice(-6);
+  cur.chat.push({ role: "user", content: question });
+  $("chatInput").value = "";
+  renderChat();
+  $("chatBtn").disabled = true;
 
   try {
-    const response = await fetch("/api/travel/approve", {
+    const res = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        thread_id: currentThreadId,
-        approved: approved,
-        feedback: feedback
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: cur.id, question, history }),
     });
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || "Could not resume the travel workflow.");
-    }
-
-    showWorkflow(data);
-    hideApproval();
-    showResult(data.answer, data.thread_id, false);
-  } catch (error) {
-    showError(error.message);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || "Chat fail ho gayi.");
+    cur.chat.push({ role: "assistant", content: data.answer });
+  } catch (e) {
+    cur.chat.push({ role: "assistant", content: "⚠️ " + e.message });
   } finally {
-    setLoading(false, "approval");
+    save();
+    renderChat();
+    $("chatBtn").disabled = false;
   }
 }
 
-function copyResult() {
-  const resultBox = document.getElementById("resultBox");
-  const text = resultBox.innerText;
 
-  if (!text) {
-    return;
-  }
-
-  navigator.clipboard.writeText(text)
-    .then(() => {
-      const copyBtn = document.querySelector(".copy-btn");
-      const oldText = copyBtn.textContent;
-      copyBtn.textContent = "Copied!";
-
-      setTimeout(() => {
-        copyBtn.textContent = oldText;
-      }, 1400);
-    })
-    .catch(() => {
-      showError("Could not copy result.");
-    });
-}
+/* ---------- pdf & delete ---------- */
 
 function downloadPDF() {
-  const pdfContent = document.getElementById("pdfContent");
-
-  if (!latestAnswerMarkdown || !pdfContent) {
-    showError("No travel plan available to download.");
-    return;
-  }
-
-  const downloadBtn = document.querySelector(".download-btn");
-  const oldText = downloadBtn.textContent;
-  downloadBtn.textContent = "Preparing PDF...";
-  downloadBtn.disabled = true;
-
-  const options = {
-    margin: 0.5,
-    filename: "ai-travel-plan.pdf",
-    image: {
-      type: "jpeg",
-      quality: 0.98
-    },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff"
-    },
-    jsPDF: {
-      unit: "in",
-      format: "a4",
-      orientation: "portrait"
-    },
-    pagebreak: {
-      mode: ["avoid-all", "css", "legacy"]
-    }
-  };
-
+  if (!cur) return;
+  showTab("plan");
+  const btn = $("pdfBtn");
+  btn.disabled = true;
   html2pdf()
-    .set(options)
-    .from(pdfContent)
-    .save()
-    .then(() => {
-      downloadBtn.textContent = oldText;
-      downloadBtn.disabled = false;
+    .set({
+      margin: 0.5,
+      filename: "travel-plan.pdf",
+      html2canvas: { scale: 2, backgroundColor: "#ffffff" },
+      jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
     })
-    .catch(() => {
-      downloadBtn.textContent = oldText;
-      downloadBtn.disabled = false;
-      showError("Could not download PDF.");
-    });
+    .from($("pdfContent"))
+    .save()
+    .finally(() => (btn.disabled = false));
 }
 
-document.addEventListener("keydown", function(event) {
-  if (event.ctrlKey && event.key === "Enter") {
-    sendMessage();
-  }
-});
+function deleteTrip() {
+  if (!cur || !confirm("Ye trip delete kar du?")) return;
+  trips = trips.filter((t) => t.id !== cur.id);
+  cur = null;
+  save();
+  show("trips");
+}
+
+
+/* ---------- events ---------- */
+
+$("logo").onclick = () => show("home");
+$("crHome").onclick = () => show("home");
+$("crTrips").onclick = () => show("trips");
+$("tripsLink").onclick = () => show("trips");
+$("seeAll").onclick = () => show("trips");
+$("searchBtn").onclick = planTrip;
+$("searchInput").addEventListener("keydown", (e) => e.key === "Enter" && planTrip());
+$("chatBtn").onclick = () => sendChat();
+$("chatInput").addEventListener("keydown", (e) => e.key === "Enter" && sendChat());
+$("pdfBtn").onclick = downloadPDF;
+$("delBtn").onclick = deleteTrip;
+
+document.querySelectorAll(".cat").forEach((c) =>
+  c.addEventListener("click", () => {
+    $("searchInput").value = c.dataset.p;
+    $("searchInput").focus();
+    window.scrollTo(0, 0);
+    toast("Request ready. Search icon ya Enter dabao.");
+  })
+);
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
+document.querySelectorAll(".quick button").forEach((b) => b.addEventListener("click", () => sendChat(b.dataset.q)));
+
+$("cnt").textContent = trips.length;
+show("home");

@@ -339,3 +339,56 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
         "itinerary": result.get("itinerary", ""),
         "llm_calls": result.get("llm_calls", 0),
     }
+
+# =========================
+# Follow-up chat on a saved trip
+# =========================
+
+def chat_about_trip(question: str, thread_id: str, history: list | None = None):
+    config = {"configurable": {"thread_id": thread_id}}
+    saved = travel_graph.get_state(config).values
+
+    if not saved or not saved.get("itinerary"):
+        return {
+            "thread_id": thread_id,
+            "answer": "Is trip ka saved plan nahi mila. Pehle trip plan karo."
+        }
+
+    system_prompt = f"""You are a helpful travel assistant answering follow-up questions about ONE trip.
+Use only the trip data below. If the answer is not in it, say so and give a short general suggestion.
+
+Trip request:
+{clip(saved.get('user_query', ''), 500)}
+
+Flights:
+{clip(saved.get('flight_results', ''), 1000)}
+
+Hotels:
+{clip(saved.get('hotel_results', ''), 1500)}
+
+Weather:
+{clip(saved.get('weather_results', ''), 1500)}
+
+Final plan:
+{clip(saved.get('itinerary', ''), 4000)}
+"""
+
+    messages = [SystemMessage(content=system_prompt)]
+
+    for item in (history or [])[-6:]:
+        text = clip(item.get("content", ""), 500)
+        if item.get("role") == "user":
+            messages.append(HumanMessage(content=text))
+        else:
+            messages.append(AIMessage(content=text))
+
+    messages.append(HumanMessage(content=question))
+
+    try:
+        response = llm.invoke(messages)
+        answer = response.content
+    except Exception as e:
+        print(f"Chat error: {e!r}")
+        answer = "Abhi jawab nahi de paaya, thodi der baad dobara try karo."
+
+    return {"thread_id": thread_id, "answer": answer}

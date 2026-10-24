@@ -3,134 +3,127 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Way-wise-AI</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>Way-wise-AI | Plan your trip</title>
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
-  <div class="page-bg">
-    <div class="gradient-circle circle-1"></div>
-    <div class="gradient-circle circle-2"></div>
-    <div class="gradient-circle circle-3"></div>
-  </div>
 
-  <main class="app-container">
-    <section class="hero-section">
-      <div class="badge">
-        ✈️ Way-wise-AI — LangGraph, MCP, Supervisor, Guardrails & HITL
+  <!-- ===== Header (blue bar + search) ===== -->
+  <header class="header">
+    <div class="header-inner">
+      <a class="logo" id="logo">✈️ Way-wise<b>AI</b></a>
+      <div class="search">
+        <input id="searchInput" placeholder="Describe your trip... e.g. 7 days Japan trip from India under 2 lakhs">
+        <button id="searchBtn" aria-label="Plan trip">🔍</button>
       </div>
-      <h1>Plan Your Perfect Trip with AI</h1>
-      <p>
-        Search flights, discover hotels, check weather, assess your budget,
-        and review the AI-generated draft before the final itinerary is created.
+      <button class="header-link" id="tripsLink">🧳 My Trips <b id="cnt">0</b></button>
+    </div>
+  </header>
+
+  <!-- ===== Category strip ===== -->
+  <nav class="cats">
+    <button class="cat" data-p="Plan a complete 7 days Japan trip from India including flights, hotels and sightseeing under 2 lakhs."><span>🗼</span>Japan</button>
+    <button class="cat" data-p="Plan a 5 days Dubai trip from Delhi with flights, hotels and sightseeing."><span>🏙️</span>Dubai</button>
+    <button class="cat" data-p="Plan a 7 days Thailand trip from India with budget hotels and sightseeing."><span>🛕</span>Thailand</button>
+    <button class="cat" data-p="Plan a 5 days Bali trip from India with flights, hotels and beaches."><span>🏝️</span>Bali</button>
+    <button class="cat" data-p="Plan a 6 days Switzerland trip from India with flights, hotels and sightseeing."><span>🏔️</span>Switzerland</button>
+    <button class="cat" data-p="Plan a 4 days Goa trip from Delhi with flights, hotels and beaches."><span>🏖️</span>Goa</button>
+  </nav>
+
+  <main>
+
+    <!-- ===== Home ===== -->
+    <section id="v-home" class="view">
+      <div class="banner">
+        <div>
+          <h1>Plan any trip in under a minute</h1>
+          <p>Flights, hotels, weather and a day-by-day itinerary. Then keep chatting to tweak it.</p>
+        </div>
+        <div class="banner-emoji">✈️</div>
+      </div>
+
+      <div class="perks">
+        <div class="perk"><span>✈️</span><b>Flights</b><p>Routes and airlines</p></div>
+        <div class="perk"><span>🏨</span><b>Hotels</b><p>Live search results</p></div>
+        <div class="perk"><span>🌦️</span><b>Weather</b><p>Current and forecast</p></div>
+        <div class="perk"><span>🗓️</span><b>Itinerary</b><p>Day-by-day plan</p></div>
+      </div>
+
+      <div class="section-head">
+        <h2>Your recent trips</h2>
+        <a id="seeAll">View all ›</a>
+      </div>
+      <div id="homeList" class="grid"></div>
+    </section>
+
+    <!-- ===== My Trips ===== -->
+    <section id="v-trips" class="view hidden">
+      <div class="section-head"><h2>My Trips</h2></div>
+      <div id="tripList" class="grid"></div>
+    </section>
+
+    <!-- ===== Trip detail (plan + chat) ===== -->
+    <section id="v-detail" class="view hidden">
+      <p class="crumbs">
+        <a id="crHome">Home</a> › <a id="crTrips">My Trips</a> › <span id="crTitle"></span>
       </p>
-    </section>
 
-    <section class="planner-card">
-      <div class="card-header">
-        <div>
-          <h2>Where do you want to go?</h2>
-          <p>
-            Example: Plan a complete 7 days Japan trip from India under 2 lakhs.
-          </p>
+      <div class="detail">
+        <div class="box">
+          <div class="detail-head">
+            <div>
+              <h1 id="dTitle"></h1>
+              <p id="dMeta"></p>
+            </div>
+            <div class="acts">
+              <button id="pdfBtn" class="btn-orange">⬇ DOWNLOAD PDF</button>
+              <button id="delBtn" class="btn-link">Delete</button>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <button class="tab on" data-tab="plan">Itinerary</button>
+            <button class="tab" data-tab="flights">Flights</button>
+            <button class="tab" data-tab="hotels">Hotels</button>
+            <button class="tab" data-tab="weather">Weather</button>
+          </div>
+
+          <div id="t-plan" class="panel"><div id="pdfContent" class="paper"><div id="resultBox" class="md"></div></div></div>
+          <div id="t-flights" class="panel hidden"><pre id="rawFlights" class="raw"></pre></div>
+          <div id="t-hotels" class="panel hidden"><pre id="rawHotels" class="raw"></pre></div>
+          <div id="t-weather" class="panel hidden"><pre id="rawWeather" class="raw"></pre></div>
         </div>
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          Online
-        </div>
-      </div>
 
-      <div class="input-area">
-        <textarea
-          id="userInput"
-          placeholder="Plan a complete 7 days Japan trip including flights, hotels and sightseeing under 2 lakhs..."
-        ></textarea>
-        <button id="sendBtn" onclick="sendMessage()">
-          <span id="btnText">Generate Draft</span>
-          <span id="btnLoader" class="loader hidden"></span>
-        </button>
-      </div>
-
-      <div class="quick-prompts">
-        <button onclick="setPrompt('Plan a complete 7 days Japan trip from India including flights, hotels and sightseeing under 2 lakhs.')">
-          Japan Trip
-        </button>
-        <button onclick="setPrompt('Plan a 5 days Dubai trip from Delhi with flights, hotels and sightseeing.')">
-          Dubai Trip
-        </button>
-        <button onclick="setPrompt('Plan a 7 days Thailand trip from India with budget hotels and sightseeing.')">
-          Thailand Trip
-        </button>
-        <button onclick="setPrompt('Give me all country flight info.')">
-          Global Flights
-        </button>
-      </div>
-    </section>
-
-    <section id="workflowSection" class="workflow-section hidden">
-      <div class="workflow-header">
-        <div>
-          <span class="eyebrow">Supervisor Agent</span>
-          <h2>Execution Plan</h2>
-        </div>
-        <span id="guardrailBadge" class="guardrail-badge">Guardrail passed</span>
-      </div>
-      <p id="supervisorReasoning" class="supervisor-reasoning"></p>
-      <div id="agentChips" class="agent-chips"></div>
-    </section>
-
-    <section id="resultSection" class="result-section hidden">
-      <div class="result-header">
-        <div>
-          <h2 id="resultTitle">Your AI Travel Plan</h2>
-          <p id="threadInfo">Thread ID: -</p>
-        </div>
-        <div class="result-actions">
-          <button class="copy-btn" onclick="copyResult()">Copy</button>
-          <button class="download-btn" onclick="downloadPDF()">Download PDF</button>
-        </div>
-      </div>
-
-      <div id="pdfContent" class="pdf-content">
-        <h1 class="pdf-title">AI Travel Plan</h1>
-        <div id="resultBox" class="result-box"></div>
+        <aside class="chat-card">
+          <div class="chat-head">💬 Ask about this trip<small>Continue the chat anytime</small></div>
+          <div id="chatBox" class="chatbox"></div>
+          <div class="quick">
+            <button data-q="Day 2 mein kya karna hai?">Day 2 plan?</button>
+            <button data-q="Is trip ka budget kaise kam karein?">Cut budget</button>
+            <button data-q="Best time to visit aur kya pack karun?">Packing tips</button>
+          </div>
+          <div class="chatrow">
+            <input id="chatInput" placeholder="Type your question...">
+            <button id="chatBtn" class="btn-blue">Send</button>
+          </div>
+        </aside>
       </div>
     </section>
 
-    <section id="approvalSection" class="approval-section hidden">
-      <div class="approval-icon">👤</div>
-      <div class="approval-content">
-        <span class="eyebrow">Human-in-the-Loop</span>
-        <h2>Review the draft itinerary</h2>
-        <p id="approvalRequest">
-          Approve the draft or provide feedback before the final plan is generated.
-        </p>
-
-        <textarea
-          id="approvalFeedback"
-          class="feedback-input"
-          placeholder="Add revision feedback, for example: reduce the hotel cost and add one free day..."
-        ></textarea>
-
-        <div class="approval-actions">
-          <button id="approveBtn" class="approve-btn" onclick="submitApproval(true)">
-            Approve & Generate Final
-          </button>
-          <button id="reviseBtn" class="revise-btn" onclick="submitApproval(false)">
-            Revise Using Feedback
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <section id="errorBox" class="error-box hidden"></section>
   </main>
 
-  <footer>
-    Built with FastAPI, LangGraph, Groq, PostgreSQL, Tavily, AviationStack and MCP
-  </footer>
+  <!-- ===== Loading overlay + toast ===== -->
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-box">
+      <div class="spinner"></div>
+      <h3>Planning your trip</h3>
+      <p id="loadMsg"></p>
+    </div>
+  </div>
+  <p id="toast" class="toast hidden"></p>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="/static/script.js"></script>
+  <script src="/static/script.js?v=3"></script>
 </body>
 </html>

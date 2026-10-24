@@ -8,23 +8,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from backend import run_travel_agent
+# CHANGED: chat_about_trip imported along with run_travel_agent
+from backend import run_travel_agent, chat_about_trip
 
 # This is kept from the original project to allow the existing synchronous
 # agent functions to call async MCP helpers inside FastAPI.
 import nest_asyncio
 
-nest_asyncio.apply() 
+nest_asyncio.apply()
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Way-wise-AI",
-    description=(
-        "LangGraph Multi-Agent Travel Planner with Supervisor, Guardrails, "
-        "Human-in-the-Loop, and FastAPI Frontend"
-    ),
-    version="2.0.0",
+    description="LangGraph Multi-Agent Travel Planner with trip chat and FastAPI frontend",
+    version="2.1.0",
 )
 
 app.mount(
@@ -41,10 +39,11 @@ class TravelRequest(BaseModel):
     thread_id: str | None = None
 
 
-class ApprovalRequest(BaseModel):
+# NEW: request body for follow-up chat
+class ChatRequest(BaseModel):
     thread_id: str = Field(min_length=1)
-    approved: bool
-    feedback: str = ""
+    question: str = Field(min_length=1)
+    history: list[dict] = []
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -56,8 +55,10 @@ async def home(request: Request):
     )
 
 
+# CHANGED: plain `def` (was `async def`) so the long blocking agent run
+# executes in a worker thread and does not freeze the whole server.
 @app.post("/api/travel")
-async def travel_planner(request_data: TravelRequest):
+def travel_planner(request_data: TravelRequest):
     try:
         user_message = request_data.message.strip()
 
@@ -95,22 +96,14 @@ async def travel_planner(request_data: TravelRequest):
         )
 
 
-@app.post("/api/travel/approve")
-async def approve_travel_plan(request_data: ApprovalRequest):
+# NEW: follow-up chat on an already planned trip (one LLM call, no graph re-run)
+@app.post("/api/chat")
+def chat(request_data: ChatRequest):
     try:
-        if not request_data.approved and not request_data.feedback.strip():
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "error": "Please provide revision feedback when rejecting the draft.",
-                },
-            )
-
-        result = run_travel_agent(
+        result = chat_about_trip(
+            question=request_data.question,
             thread_id=request_data.thread_id,
-            approved=request_data.approved,
-            feedback=request_data.feedback,
+            history=request_data.history,
         )
 
         return JSONResponse(
@@ -121,7 +114,7 @@ async def approve_travel_plan(request_data: ApprovalRequest):
         )
 
     except Exception as exc:
-        print("APPROVAL ERROR:", exc)
+        print("CHAT ERROR:", exc)
         traceback.print_exc()
 
         return JSONResponse(
@@ -133,15 +126,17 @@ async def approve_travel_plan(request_data: ApprovalRequest):
         )
 
 
+# REMOVED: /api/travel/approve (backend has no human-in-the-loop step)
+
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "ok",
-        "message": "TripMate AI API is running",
+        "message": "Way-wise-AI API is running",
         "features": [
-            "supervisor_agent",
-            "input_guardrail",
-            "human_in_the_loop",
+            "parallel_agents",
+            "trip_chat",
         ],
     }
 
