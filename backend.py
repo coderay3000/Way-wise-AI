@@ -28,7 +28,14 @@ from langchain_core.messages import (
 from langchain_groq import ChatGroq
 #from tools.tavily_tool import tavily_search
 #from tools.flight_tool import search_flights
-from mcp_client import tavily_mcp_search,aviation_mcp_call,extract_destination,forecast_mcp_search,weather_mcp_search
+
+# CHANGED: new function names from mcp_client
+from mcp_client import (
+    tavily_mcp_search,
+    aviation_airports_and_airlines,
+    extract_destination,
+    weather_and_forecast,
+)
 
 def get_database_url():
   database_url = os.getenv("DATABASE_URL")
@@ -42,7 +49,7 @@ def get_database_url():
   return database_url  
 
 url = get_database_url()
-print(f"Connecting to database at {url}")
+# CHANGED: removed print of DB url (it leaked the password into logs)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
@@ -53,6 +60,15 @@ llm = ChatGroq(
    model = "openai/gpt-oss-120b",
    api_key = GROQ_API_KEY
 )
+
+
+# NEW: helper to keep prompts under the Groq TPM limit
+def clip(value, limit: int) -> str:
+    text = str(value)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...[truncated]"
+
 
 class TravelState(TypedDict):
     message: Annotated[list[AnyMessage],operator.add]
@@ -106,13 +122,15 @@ FLIGHT_AGENT_PROMPT = """
 """
 
 
+# CHANGED: try/except added
 def hotel_agent(state: TravelState) -> TravelState:
     query = f"Best hotels for {state['user_query']}"
 
-    hotel_results = asyncio.run(tavily_mcp_search(query))
-
-    # Limit the search result size before passing it downstream
-    hotel_results = str(hotel_results)[:2500]
+    try:
+        hotel_results = str(asyncio.run(tavily_mcp_search(query)))[:2500]
+    except Exception as e:
+        print(f"Hotel agent error: {e!r}")
+        hotel_results = "Hotel information is currently unavailable."
 
     return {
         "hotel_results": hotel_results,
@@ -125,46 +143,32 @@ def hotel_agent(state: TravelState) -> TravelState:
 
 
 # Flight Agent 
+# CHANGED: single asyncio.run for both calls, content= typo fixed, airlines variable fixed
 def flight_agent(state:TravelState):
    print("\nINSIDE FLIGHT AGENT\n")
 
    query = state["user_query"]
 
    try:
-
-      airports = asyncio.run(
-         aviation_mcp_call(
-            "list_airports"
-         )
-      )
-
-      airlines = asyncio.run(
-         aviation_mcp_call(
-            "list_airlines"
-         )
-      )
-
-      print("\nAIRPORTS:",airports)
-      print("\nAirlines",airlines)
+      airports, airlines = asyncio.run(aviation_airports_and_airlines())
 
       prompt = FLIGHT_AGENT_PROMPT.format(
          query=query,
          airport_data=str(airports)[:3000],
-         airline_data=str(airports)[:1500]
+         airline_data=str(airlines)[:1500]
       )
 
       response = llm.invoke([
          SystemMessage(
-            contents = "You are an expert travel flight Planner."
+            content = "You are an expert travel flight Planner."
          ),
          HumanMessage(content=prompt)
       ])
 
       flight_data = response.content
 
-   
    except Exception as e:
-       print(f"Flight agent error: {e}")
+       print(f"Flight agent error: {e!r}")
        flight_data = "Flight information is currently unavailable."
 
    return {
@@ -176,58 +180,34 @@ def flight_agent(state:TravelState):
     }
 
  # weather agent
+# CHANGED: one asyncio.run for both calls, try/except, clipped output
 def weather_agent(state:TravelState):
-   city=extract_destination(state["user_query"])
-
-   weather_data=asyncio.run(
-      weather_mcp_search(city)
-   )  
-
-   forecast_data=asyncio.run(
-      forecast_mcp_search(city)
-   )  
+   try:
+      city = extract_destination(state["user_query"])
+      weather_data, forecast_data = asyncio.run(weather_and_forecast(city))
+      weather_text = (
+         f"Current Weather:\n{clip(weather_data, 1200)}\n\n"
+         f"Forecast:\n{clip(forecast_data, 1800)}"
+      )
+   except Exception as e:
+      print(f"Weather agent error: {e!r}")
+      weather_text = "Weather information is currently unavailable."
 
    return {
-      "weather_results":f"""
-       Current Weather:
-       {weather_data}
-       
-       Forecast:
-       {forecast_data}
-     """,
-     "message":[
-        AIMessage(
-           content="Weather information fetched"
-        )
-     ]
-   }
- 
-   
-def itinerary_agent(state: TravelState) -> TravelState:
-   prompt = f"""Create a complete travel itinerary.
-   
-   User Query: {state['user_query']}
-   
-   Flight Results: {state['flight_results']}
-   
-   Hotel Results: {state['hotel_results']}
-
-   Weather Results: {state['weather_results']}
-
-
-  make the itinerary practical , budget-aware, and easy to follow.   
-  """
-
-   response = llm.invoke([
-          SystemMessage(content="You are a travel assistant that creates detailed itineraries based on user queries and search results."),
-          HumanMessage(content=prompt)
-       ])
-   return {
-      "itinerary": response.content,
-      "message":[response],
-      "llm_calls": 1
+      "weather_results": weather_text,
+      "message":[
+         AIMessage(
+            content="Weather information fetched"
+         )
+      ]
    }
 
+
+# REMOVED: itinerary_agent (final_agent already writes the day-by-day itinerary,
+# so this was a duplicate LLM call that burned tokens and latency)
+
+
+# CHANGED: inputs clipped, Itinerary block removed from prompt
 def final_agent(state: TravelState):
     final_prompt = f"""
 Generate the final travel response for the user.
@@ -236,16 +216,13 @@ User Request:
 {state['user_query']}
 
 Flights:
-{state['flight_results']}
+{clip(state['flight_results'], 1500)}
 
 Hotels:
-{state['hotel_results']}
+{clip(state['hotel_results'], 2000)}
 
 Weather:
-{state['weather_results']}
-
-Itinerary:
-{state['itinerary']}
+{clip(state['weather_results'], 2500)}
 
 Format the final answer beautifully using these sections:
 
@@ -259,6 +236,7 @@ Format the final answer beautifully using these sections:
 
 Important:
 - Be clear and practical.
+- Make the itinerary practical, budget-aware, and easy to follow.
 - Mention that live flight API may not provide ticket prices if pricing is unavailable.
 - Include Weather based travel Advice.
 - Keep the response useful for real travel planning.
@@ -287,7 +265,6 @@ graph = StateGraph(TravelState)
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
 graph.add_node("weather_agent", weather_agent)
-graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 
 # New aggregator node
@@ -303,8 +280,8 @@ graph.add_edge("flight_agent", "aggregate_results")
 graph.add_edge("hotel_agent", "aggregate_results")
 graph.add_edge("weather_agent", "aggregate_results")
 
-graph.add_edge("aggregate_results", "itinerary_agent")
-graph.add_edge("itinerary_agent", "final_agent")
+# CHANGED: aggregate goes straight to final_agent
+graph.add_edge("aggregate_results", "final_agent")
 graph.add_edge("final_agent", END)
 
 
