@@ -15,6 +15,7 @@ import uuid
 
 import psycopg  #Psycopg Python ki ek PostgreSQL database adapter/library hai   Python application ↔ Psycopg ↔ PostgreSQL database
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from langgraph.graph import StateGraph,START,END
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -287,16 +288,24 @@ graph.add_edge("final_agent", END)
 
 DATABASE_URL = get_database_url()
 
-_conn = psycopg.connect(
-    DATABASE_URL,
-    autocommit=True,
-    row_factory=dict_row
+pool = ConnectionPool(
+    conninfo=DATABASE_URL,
+    min_size=1,
+    max_size=5,
+    kwargs={
+        "autocommit": True,
+        "prepare_threshold": None,
+        "row_factory": dict_row,
+    },
 )
 
-checkpointer = PostgresSaver(_conn)
+checkpointer = PostgresSaver(pool)
+
 checkpointer.setup()
 
-travel_graph = graph.compile(checkpointer=checkpointer)
+travel_graph = graph.compile(
+    checkpointer=checkpointer
+)
 
 
 # =========================
