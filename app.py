@@ -13,9 +13,9 @@ from backend import run_travel_agent, chat_about_trip
 
 # This is kept from the original project to allow the existing synchronous
 # agent functions to call async MCP helpers inside FastAPI.
-import nest_asyncio
+# import nest_asyncio
 
-nest_asyncio.apply()
+# nest_asyncio.apply()
 
 BASE_DIR = Path(__file__).resolve().parent
 
